@@ -1,4 +1,11 @@
 # MongoDB Models
+by Anubhav Sharma
+**email** - `anubhavsharma527@gmail.com`
+- This document outlines the MongoDB models social media app like Insta/FB use for.
+    1) Register user details 
+    2) Send/Receive and Accept/Reject friend request from users
+    3) Create text-only posts and comments on their friend's posts.
+- This is also the model used for the javascript api design.
 
 ## User Model
 ```js
@@ -7,7 +14,8 @@ const userSchema = new mongoose.Schema({
     username: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        index: true
     },
     firstName: {
         type: String,
@@ -27,7 +35,8 @@ const userSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true
+        unique: true,
+        index: true
     },
     password: {
         type: String,
@@ -48,7 +57,8 @@ const postSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
+        index: true
     },
     text: {
         type: String,
@@ -75,12 +85,14 @@ const commentSchema = new mongoose.Schema({
     post: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Post',
-        required: true
+        required: true,
+        index: true
     },
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
+        index: true
     },
     content: {
         type: String,
@@ -104,12 +116,13 @@ const likeSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
     },
     post: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Post',
-        required: true
+        required: true,
+        index: true
     },
 },
 {
@@ -125,12 +138,14 @@ const friendsSchema = new mongoose.Schema({
     user1: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
+        index: true
     },
     user2: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: true,
+        index: true
     },
     status: {
         type: String,

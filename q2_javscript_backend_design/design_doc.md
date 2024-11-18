@@ -1,8 +1,30 @@
 # API Design Document
+by Anubhav Sharma
+**email** - `anubhavsharma527@gmail.com`
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Goals](#goals)
+3. [Requirements](#requirements)
+4. [Features](#features)
+5. [API Setup](#api-setup)
+6. [API Endpoints](#api-endpoints)
+   1. [Auth Route](#auth-route)
+   2. [Post Route](#post-route)
+   3. [User Route](#user-route)
+   4. [Like Route](#like-route)
+   5. [Comment Route](#comment-route)
+   6. [Friend Route](#friend-route)
+
 
 ## Overview
 
-This document outlines the API design for a Content or posts feed system for social media app like Insta/FB.
+- This document outlines the API design for a Content or posts feed system for social media app like Insta/FB.
+- In this document, we will focus on the API endpoints and their functionality.
+- This document focuses on high-level design but also contains some javascript code snippets for implementation as this was a javascript based question.
+
+![alt text](api_design_diagram.PNG)
 
 ## Goals
 
@@ -14,6 +36,10 @@ The goal of this API is to provide a simple and efficient way for users to see a
 2. A user can see posts of people who are not their friends, only if a friend has posted a comment on it.
 
 ## Features
+
+1. Register user details.
+2. Send/Receive and Accept/Reject friend request from users.
+3. Create text-only posts along with comments and likes on their friend's posts.
 
 ## API Setup - Authentication and Authorization, Database Schema, Middleware, Error Handling
 
@@ -32,13 +58,48 @@ The goal of this API is to provide a simple and efficient way for users to see a
 - Auth middleware for verifying JWT tokens.
 - Multer middleware for handling file uploads.
 - Error and Async handling utility for handling errors.
-- Cloudinary utility for handling image uploads.
+- Cloudinary utility for handling Pic uploads.
 - API Response utility for consistent API responses.
 - API Error utility for handling API errors.
 
+**`Following is the code for Auth middleware which is used to verify requests coming from clients to the protected routes of the API and it also attaches the user object to the request object.`**
+- ##### Javascript code snippet for Auth middleware
+```js
+export const verifyJWT = asyncHandler(async(req, _, next) => {
+        try {
+            //check for access token for both cookies and header
+            const token = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "")
+            
+            //if no token found
+            if (!token) {
+                throw new ApiError(401, "Unauthorized request")
+            }
+
+            //verify token
+            const decodedToken = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)
+
+            //find user
+            const user = await User.findById(decodedToken?._id).select("-password -refreshToken")
+
+            //if user not found
+            if (!user) {
+                
+                throw new ApiError(401, "Invalid Access Token")
+            }
+
+            //attach user to request
+            req.user = user;
+            next()
+        } catch (error) {
+            throw new ApiError(401, error?.message || "Invalid access token")
+        }
+        
+    })
+``` 
+- I won't be explaining the other middleware and utilities in detail here as they are self-explanatory and that's not the focus of this document.
+
 ## API Endpoints
-```
-```
+
 1. ### Auth Route
    ## `api/v1/auth`
     #### 1.Register User
@@ -69,19 +130,17 @@ The goal of this API is to provide a simple and efficient way for users to see a
     // get user details from frontend
     // validation - not empty
     // check if user already exists: username, email
-    // check for images, check for avatar
-    // upload them to cloudinary, avatar
     // create user object - create entry in db
     // remove password and refresh token field from response
     // check for user creation
     // return res
 
 
-    const {fullName, email, username, password } = req.body
+    const {userName, firstName, lastName, email, username, password } = req.body
     //console.log("email: ", email);
 
     if (
-        [fullName, email, username, password].some((field) => field?.trim() === "")
+        [userName, firstName, lastName, email, username, password].some((field) => field?.trim() === "")
     ) {
         throw new ApiError(400, "All fields are required")
     }
@@ -94,32 +153,11 @@ The goal of this API is to provide a simple and efficient way for users to see a
         throw new ApiError(409, "User with email or username already exists")
     }
     //console.log(req.files);
-
-    const avatarLocalPath = req.files?.avatar[0]?.path;
-    //const coverImageLocalPath = req.files?.coverImage[0]?.path;
-
-    let coverImageLocalPath;
-    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
-        coverImageLocalPath = req.files.coverImage[0].path
-    }
-    
-
-    if (!avatarLocalPath) {
-        throw new ApiError(400, "Avatar file is required")
-    }
-
-    const avatar = await uploadOnCloudinary(avatarLocalPath)
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
-
-    if (!avatar) {
-        throw new ApiError(400, "Avatar file is required")
-    }
    
 
     const user = await User.create({
-        fullName,
-        avatar: avatar.url,
-        coverImage: coverImage?.url || "",
+        firstName,
+        lastName,
         email, 
         password,
         username: username.toLowerCase()
@@ -163,6 +201,64 @@ The goal of this API is to provide a simple and efficient way for users to see a
         "password": "password"
     }
     ```
+    - Some JavaScript code snippets
+    - `auth.controller.js`
+    ```js
+    const loginUser = asyncHandler(async (req, res) =>{
+    // req body -> data
+    // username or email
+    //find the user
+    //password check
+    //access and referesh token
+    //send cookie
+
+    const {email, username, password} = req.body
+    console.log(email);
+
+    if (!username && !email) {
+        throw new ApiError(400, "username or email is required")
+    }
+    
+
+    const user = await User.findOne({
+        $or: [{username}, {email}]
+    })
+
+    if (!user) {
+        throw new ApiError(404, "User does not exist")
+    }
+
+   const isPasswordValid = await user.isPasswordCorrect(password)
+
+   if (!isPasswordValid) {
+    throw new ApiError(401, "Invalid user credentials")
+    }
+
+   const {accessToken, refreshToken} = await generateAccessAndRefereshTokens(user._id)
+
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken")
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+    .status(200)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new ApiResponse(
+            200,
+            {
+                user: loggedInUser, accessToken, refreshToken
+            },
+            "User logged In Successfully"
+        )
+    )
+
+    })
+    ```
     - Response: user details and tokens as JSON and HttpOnly cookies
     ```json
     {
@@ -185,6 +281,34 @@ The goal of this API is to provide a simple and efficient way for users to see a
     - Method: POST
     - Description: Logout a user.
     - Request Body: None
+    - JavaScript code snippets
+    - `auth.controller.js`
+    ```js
+    const logoutUser = asyncHandler(async(req, res) => {
+    await User.findByIdAndUpdate(
+        req.user._id,
+        {
+            $unset: {
+                refreshToken: 1 // this removes the field from document
+            }
+        },
+        {
+            new: true
+        }
+    )
+
+    const options = {
+        httpOnly: true,
+        secure: true
+    }
+
+    return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(200, {}, "User logged Out"))
+    })
+    ```
     - Response: Success message
     ```json
     {
@@ -199,6 +323,19 @@ The goal of this API is to provide a simple and efficient way for users to see a
     - Method: GET
     - Description: Get current user details.
     - Request Body: None
+    - JavaScript code snippets
+    - `auth.controller.js`
+    ```js
+    const getCurrentUser = asyncHandler(async(req, res) => {
+        return res
+        .status(200)
+        .json(new ApiResponse(
+            200,
+            req.user,
+            "User fetched successfully"
+        ))
+    })
+    ```
     - Response: user details as JSON
     ```json
     {
@@ -217,6 +354,57 @@ The goal of this API is to provide a simple and efficient way for users to see a
     - Method: POST
     - Description: Refresh access token using refresh token.
     - Request Body: None
+    - JavaScript code snippets
+    - `auth.controller.js`
+    ```js
+    const refreshAccessToken = asyncHandler(async (req, res) => {
+    const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
+
+    if (!incomingRefreshToken) {
+        throw new ApiError(401, "unauthorized request")
+    }
+
+    try {
+        const decodedToken = jwt.verify(
+            incomingRefreshToken,
+            process.env.REFRESH_TOKEN_SECRET
+        )
+    
+        const user = await User.findById(decodedToken?._id)
+    
+        if (!user) {
+            throw new ApiError(401, "Invalid refresh token")
+        }
+    
+        if (incomingRefreshToken !== user?.refreshToken) {
+            throw new ApiError(401, "Refresh token is expired or used")
+            
+        }
+    
+        const options = {
+            httpOnly: true,
+            secure: true
+        }
+    
+        const {accessToken, newRefreshToken} = await generateAccessAndRefereshTokens(user._id)
+    
+        return res
+        .status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", newRefreshToken, options)
+        .json(
+            new ApiResponse(
+                200, 
+                {accessToken, refreshToken: newRefreshToken},
+                "Access token refreshed"
+            )
+        )
+    } catch (error) {
+        throw new ApiError(401, error?.message || "Invalid refresh token")
+    }
+
+    })
+    ```
     - Response: New access token and HttpOnly cookie
     ```json
     {
@@ -257,7 +445,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     const createPost = asyncHandler( async (req, res) => {
     // get post details from frontend
     // validation - not empty
-    // upload image to cloudinary
+    // upload Pic to cloudinary
     // create post object - create entry in db
     // return res
     const {userId, content} = req.body
@@ -310,7 +498,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     const getPostsForUserFeed = asyncHandler( async (req, res) => {
     // get post details from frontend
     // validation - not empty
-    // upload image to cloudinary
+    // upload Pic to cloudinary
     // create post object - create entry in db
     // return res
     const {userId, page, limit} = req.query
@@ -380,7 +568,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     const getPost = asyncHandler( async (req, res) => {
     // get post details from frontend
     // validation - not empty
-    // upload image to cloudinary
+    // upload Pic to cloudinary
     // create post object - create entry in db
     // return res
     const {postId} = req.params
@@ -536,6 +724,29 @@ The goal of this API is to provide a simple and efficient way for users to see a
         const {userId} = req.params
         const {username, email, firstName, lastName, bio, profilePic, coverPic} = req.body
 
+        //check if profilePic is uploaded
+        const profilePicLocalPath = req.files?.profilePic[0]?.path;
+        //const coverPicLocalPath = req.files?.coverPic[0]?.path;
+
+        //check if cover Pic is uploaded
+        let coverPicLocalPath;
+        if (req.files && Array.isArray(req.files.coverPic) && req.files.coverPic.length > 0) {
+            coverPicLocalPath = req.files.coverPic[0].path
+        }
+        
+        //check if profilePic is uploaded
+        if (!profilePicLocalPath) {
+            throw new ApiError(400, "profilePic file is required")
+        }
+
+        //upload profilePic and cover Pic to cloudinary
+        const profilePic = await uploadOnCloudinary(profilePicLocalPath)
+        const coverPic = await uploadOnCloudinary(coverPicLocalPath)
+
+        if (!profilePic) {
+            throw new ApiError(400, "profilePic file is required")
+        }
+
         const user = await User.findByIdandUpdate(userId, {
             username,
             email,
@@ -574,7 +785,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     #### 3.Delete a User
     - `api/v1/users/:userId`
     - Method: DELETE
-    - Description: Delete a user.
+    - Description: Delete your Account.
     - Request Body: None
     - Javascript code snippets
     - `user.controller.js`
@@ -726,7 +937,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     ```
 
     #### 4.Get Friend Requests
-    - `api/v1/friends/requests`
+    - `api/v1/friends/requests?page=1&limit=10`
     - Method: GET
     - Description: Get friend requests.
     - Request Body: None
@@ -735,7 +946,8 @@ The goal of this API is to provide a simple and efficient way for users to see a
     ```js
     const getFriendRequests = asyncHandler( async (req, res) => {
         const {userId} = req.user
-        const requests = await User.find({$or: [{user1: userId}, {user2: userId}]})
+        const {page, limit} = req.query
+        const requests = await User.find({$or: [{user1: userId}, {user2: userId}]}).skip((page - 1) * limit).limit(limit)
 
         return res.status(200).ApiResponse(200, requests, "Friend requests fetched successfully")
     })
@@ -768,7 +980,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
 
 
     #### 5.Get Friends
-    - `api/v1/friends`
+    - `api/v1/friends?page=1&limit=10`
     - Method: GET
     - Description: Get friends.
     - Request Body: None
@@ -777,13 +989,14 @@ The goal of this API is to provide a simple and efficient way for users to see a
     ```js
     const getFriends = asyncHandler( async (req, res) => {
         const {userId} = req.user
+        const {page, limit} = req.query
         
         const friends = await Friends.find({
             $or: [
             { user1: userId, status: 'accepted' },
             { user2: userId, status: 'accepted' }
             ]
-        }).populate('user1 user2', 'firstName lastName profilePicture');
+        }).populate('user1 user2', 'firstName lastName profilePicture').skip((page - 1) * limit).limit(limit);
 
 
         return res.status(200).ApiResponse(200, friends, "Friends fetched successfully")
@@ -798,17 +1011,17 @@ The goal of this API is to provide a simple and efficient way for users to see a
         "data": {
             "name": "name",
             "email": "email",
-            "profileImage": "profileImage",
+            "profilePic": "profilePic",
             "friends": [
                 {
                     "name": "name",
                     "email": "email",
-                    "profileImage": "profileImage",
+                    "profilePic": "profilePic",
                 },
                 {
                     "name": "name",
                     "email": "email",
-                    "profileImage": "profileImage",
+                    "profilePic": "profilePic",
                 }
             ]
         }
@@ -867,7 +1080,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     ```
 
     #### 2.Get Comments for a Post
-    - `api/v1/comments/:postId`
+    - `api/v1/comments/:postId?page=1&limit=10`
     - Method: GET
     - Description: Get comments for a post.
     - Request Body: None
@@ -876,6 +1089,7 @@ The goal of this API is to provide a simple and efficient way for users to see a
     ```js
     const getCommentsForPost = asyncHandler( async (req, res) => {
         const {postId} = req.params
+        const {page, limit} = req.query
 
         const comments = await Comment.find({post: postId}).skip((page - 1) * limit).limit(limit)
 
